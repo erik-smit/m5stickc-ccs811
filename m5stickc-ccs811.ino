@@ -4,7 +4,8 @@
 String ccs811_baseline_filename = "/M5Stack/ccs811_baseline";
 DFRobot_CCS811 CCS811(&Wire, /*IIC_ADDRESS=*/0x5A);
 RTC_TimeTypeDef RTC_TimeStruct;
-unsigned long lastBaselineWrite = 0;
+unsigned long lastBaselineWriteHour = 0;
+bool baselineSet = false;
 
 void setup(void)
 {
@@ -53,46 +54,61 @@ void loop() {
     M5.Lcd.printf("I    : %.2f mA\r\n",discharge);
 
     M5.Rtc.GetTime(&RTC_TimeStruct);
-    M5.Lcd.printf("Time : %02d:%02d:%02d\n",RTC_TimeStruct.Hours, RTC_TimeStruct.Minutes, RTC_TimeStruct.Seconds);
+    M5.Lcd.printf(
+      "Time : %02d:%02d:%02d\n", 
+      RTC_TimeStruct.Hours, 
+      RTC_TimeStruct.Minutes, 
+      RTC_TimeStruct.Seconds);
 
-    if(CCS811.checkDataReady() == true){
+    if (CCS811.checkDataReady() == true){
         M5.Lcd.printf("eCO2 : %.4d ppm\r\n",CCS811.getCO2PPM());
         M5.Lcd.printf("TVOC : %.4d ppb\r\n",CCS811.getTVOCPPB());        
     }
 
+    //delay cannot be less than measurement cycle
+    delay(1000);
+    
     // AN000370: Do not save or restore the baseline while the sensor is still in the process of warming up.
     if(!baselineSet && RTC_TimeStruct.Hours == 0 && RTC_TimeStruct.Minutes > 20) {
       loadCCS811Baseline();
+      baselineSet = true;
     }
 
-    if (M5.BtnA.isPressed()) {
+    if (RTC_TimeStruct.Hours > lastBaselineWriteHour) {
+      dumpCCS811Baseline();
+      lastBaselineWriteHour = RTC_TimeStruct.Hours;
+    }
+    
+    if (M5.BtnA.wasPressed()) {
       dumpCCS811Baseline();
     }
-    if (M5.BtnB.isPressed()) {
+    if (M5.BtnB.wasPressed()) {
       loadCCS811Baseline();
     }
-
-    //delay cannot be less than measurement cycle
-    delay(1000);
 }
 
 void timePrefix(String text) {
-  M5.Lcd.printf("%02d:%02d:%02d %s\n",RTC_TimeStruct.Hours, RTC_TimeStruct.Minutes, RTC_TimeStruct.Seconds, text.c_str());
+  M5.Lcd.printf(
+    "%02d:%02d:%02d %s", 
+    RTC_TimeStruct.Hours, 
+    RTC_TimeStruct.Minutes, 
+    RTC_TimeStruct.Seconds, 
+    text.c_str());
 }
 
 void loadCCS811Baseline() {
   M5.Lcd.fillScreen(BLACK);  
   M5.Lcd.setCursor(0, 40, 1);
   if (SPIFFS.exists(ccs811_baseline_filename)){
-    timePrefix("baseline found.");
     File CBF = SPIFFS.open(ccs811_baseline_filename, FILE_READ);
     size_t len = 2;
-    uint16_t  sbuf;
-    CBF.readBytes((char *)sbuf, len);
+    uint16_t sbuf;
+    CBF.readBytes((char *)&sbuf, len);
     CCS811.writeBaseLine(sbuf);
-    timePrefix("baseline loaded.");
+    timePrefix("baseline loaded.\n");
+    M5.Lcd.printf("Value: %04x\r\n", __builtin_bswap16(sbuf));
   } else {
-    timePrefix("baseline not found.");
+    timePrefix("baseline not found.\n");
   }
 }
 
@@ -102,6 +118,8 @@ void dumpCCS811Baseline() {
   File CBF = SPIFFS.open(ccs811_baseline_filename, FILE_WRITE);
   uint16_t baseline;
   baseline = CCS811.readBaseLine();
-  CBF.print(baseline);
-  timePrefix("baseline written.");
+  CBF.write(baseline & 0xff);
+  CBF.write(baseline >> 8 & 0xff);
+  timePrefix("baseline written.\n");
+  M5.Lcd.printf("Value: %04x\r\n", __builtin_bswap16(baseline));
 }
