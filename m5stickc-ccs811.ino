@@ -3,6 +3,7 @@
 
 String file_name = "/M5Stack/notes.txt";
 DFRobot_CCS811 CCS811(&Wire, /*IIC_ADDRESS=*/0x5A);
+RTC_TimeTypeDef RTC_TimeStruct;
 
 void setup(void)
 {
@@ -34,19 +35,28 @@ void setup(void)
         M5.Lcd.println("SPIFFS still failed to Start.");
     }
   }
+
+  /* RTC */
+  RTC_TimeStruct.Hours   = 0;
+  RTC_TimeStruct.Minutes = 0;
+  RTC_TimeStruct.Seconds = 0;
+  M5.Rtc.SetTime(&RTC_TimeStruct);
   
 }
 
 void loop() {
     M5.Lcd.setCursor(0, 2, 1);
     double discharge = M5.Axp.GetIdischargeData() / 2.0;
-    M5.Lcd.printf("I    :%.2f mA\r\n",discharge);
+    M5.Lcd.printf("I    : %.2f mA\r\n",discharge);
 
+    M5.Rtc.GetTime(&RTC_TimeStruct);
+    M5.Lcd.printf("Time : %02d:%02d:%02d\n",RTC_TimeStruct.Hours, RTC_TimeStruct.Minutes, RTC_TimeStruct.Seconds);
+    
     if(CCS811.checkDataReady() == true){
-        M5.Lcd.printf("eCO2 :%.4d ppm\r\n",CCS811.getCO2PPM());
-        M5.Lcd.printf("TVOC :%.4d ppb\r\n",CCS811.getTVOCPPB());        
+        M5.Lcd.printf("eCO2 : %.4d ppm\r\n",CCS811.getCO2PPM());
+        M5.Lcd.printf("TVOC : %.4d ppb\r\n",CCS811.getTVOCPPB());        
     }
-
+    
     //delay cannot be less than measurement cycle
     delay(1000);
 }
